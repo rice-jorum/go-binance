@@ -10,6 +10,8 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+type WsServeFn func() (doneC, stopC chan struct{}, err error)
+
 // WsHandler handle raw websocket message
 type WsHandler func(message []byte)
 
@@ -39,6 +41,64 @@ func wsServe(cfg *WsConfig, handler WsHandler, errHandler ErrHandler) (doneC, st
 			keepAliveWithPong(ctx, c, WebsocketTimeout)
 		}
 	})
+}
+
+type ReconnectOptions struct {
+	InitialBackoff time.Duration
+	MaxBackoff     time.Duration
+	MaxRetry       int // 0 = 无限
+}
+
+func wsFnServeWithReconnect(
+	serve WsServeFn,
+	//errHandler ErrHandler,
+	opts ReconnectOptions,
+) (stopAll func(), err error) {
+
+	stopAllC := make(chan struct{})
+
+	go func() {
+		retry := 0
+		backoff := opts.InitialBackoff
+		if backoff <= 0 {
+			backoff = time.Second
+		}
+
+		for {
+			doneC, stopC, _ := serve()
+			//if err != nil {
+			//	errHandler(err)
+			//}
+
+			select {
+			case <-doneC:
+				// 连接异常结束，准备重连
+			case <-stopAllC:
+				close(stopC)
+				return
+			}
+
+			// 重试次数限制
+			if opts.MaxRetry > 0 {
+				retry++
+				if retry >= opts.MaxRetry {
+					return
+				}
+			}
+
+			time.Sleep(backoff)
+
+			// 指数退避
+			backoff *= 2
+			if opts.MaxBackoff > 0 && backoff > opts.MaxBackoff {
+				backoff = opts.MaxBackoff
+			}
+		}
+	}()
+
+	return func() {
+		close(stopAllC)
+	}, nil
 }
 
 type ConnHandler func(context.Context, *websocket.Conn)

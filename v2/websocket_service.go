@@ -63,6 +63,16 @@ func getCombinedEndpoint() string {
 	return BaseCombinedMainURL
 }
 
+func WsFnServeWithReconnect(start WsServeFn) (stop func(), err error) {
+	return wsFnServeWithReconnect(
+		start,
+		ReconnectOptions{
+			InitialBackoff: time.Second,
+			MaxBackoff:     30 * time.Second,
+		},
+	)
+}
+
 // WsPartialDepthEvent define websocket partial depth book event
 type WsPartialDepthEvent struct {
 	Symbol       string

@@ -1700,6 +1700,40 @@ func (s *websocketServiceTestSuite) TestBookTickerServe() {
 	s.r().NoError(err)
 	stopC <- struct{}{}
 	<-doneC
+
+}
+
+func (s *websocketServiceTestSuite) TestFnServeWithReconnect() {
+	data := []byte(`{
+  		"u":17242169,
+  		"s":"BTCUSD_200626",
+  		"b":"9548.1",
+  		"B":"52",
+  		"a":"9548.5",
+  		"A":"11"
+	  }`)
+	fakeErrMsg := "fake error"
+	s.mockWsServe(data, errors.New(fakeErrMsg))
+	defer s.assertWsServe()
+	
+	stopF, err := WsFnServeWithReconnect(func() (doneC, stopC chan struct{}, err error) {
+		return WsBookTickerServe("BTCUSD_200626", func(event *WsBookTickerEvent) {
+			e := &WsBookTickerEvent{
+				UpdateID:     17242169,
+				Symbol:       "BTCUSD_200626",
+				BestBidPrice: "9548.1",
+				BestBidQty:   "52",
+				BestAskPrice: "9548.5",
+				BestAskQty:   "11",
+			}
+			s.assertWsBookTickerEvent(e, event)
+		},
+			func(err error) {
+				s.r().EqualError(err, fakeErrMsg)
+			})
+	})
+	s.r().NoError(err)
+	stopF()
 }
 
 // https://binance-docs.github.io/apidocs/spot/en/#all-book-tickers-stream
